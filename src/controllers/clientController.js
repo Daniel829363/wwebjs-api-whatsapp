@@ -1,6 +1,7 @@
 const { MessageMedia, Location, Poll } = require('whatsapp-web.js')
 const { sessions } = require('../sessions')
 const { sendErrorResponse } = require('../utils')
+const { logger } = require('../logger')
 
 /**
  * Send a message to a chat using the WhatsApp API
@@ -1194,9 +1195,15 @@ const sendSeen = async (req, res) => {
   try {
     const { chatId } = req.body
     const client = sessions.get(req.params.sessionId)
+    
+    if (!chatId) {
+      return sendErrorResponse(res, 400, 'chatId is required')
+    }
+    
     const result = await client.sendSeen(chatId)
     res.json({ success: true, result })
   } catch (error) {
+    logger.error({ err: error, sessionId: req.params.sessionId, chatId: req.body.chatId }, 'Error in sendSeen')
     sendErrorResponse(res, 500, error.message)
   }
 }

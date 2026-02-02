@@ -11,15 +11,15 @@ services:
     container_name: wwebjs-api
     restart: always
     ports:
-      - "3366:80"
+      - "8000:80"
     networks:
       - my-network
     environment:
       # Core Configuration
       - PORT=80
-      - BASE_WEBHOOK_URL=https://kargo_app/api/whatsapp/webhook
+      - BASE_WEBHOOK_URL=https://whatsbot.com.kg/api/whatsapp/webhook
       - MAX_ATTACHMENT_SIZE=5000000 # In bytes (5MB)
-      - SET_MESSAGES_AS_SEEN=FALSE
+      - SET_MESSAGES_AS_SEEN=TRUE
       - ENABLE_LOCAL_CALLBACK_EXAMPLE=FALSE
       - ENABLE_SWAGGER_ENDPOINT=TRUE
       - RECOVER_SESSIONS=TRUE
@@ -32,8 +32,8 @@ services:
       # - RATE_LIMIT_WINDOW_MS=1000 # Time window in milliseconds
       
       # WhatsApp Web Configuration
-      - WEB_VERSION='2.2328.5' # Specific WhatsApp Web version
-      - WEB_VERSION_CACHE_TYPE=none # Options: local, remote, none
+      - WEB_VERSION='2.3000.1031490220-alpha' # Specific WhatsApp Web version
+      - WEB_VERSION_CACHE_TYPE=remote # Options: local, remote, none
       
       # Callback Configuration
       - DISABLED_CALLBACKS=message_ack|message_reaction|change_state|unread_count|message_edit|message_ciphertext|group_join|group_leave|group_update|message|ready|contact_changed|message_revoke_everyone|loading_screen

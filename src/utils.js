@@ -49,9 +49,13 @@ const isEventEnabled = (event) => {
 const sendMessageSeenStatus = async (message) => {
   try {
     const chat = await message.getChat()
-    await chat.sendSeen()
+    if (chat && typeof chat.sendSeen === 'function') {
+      await chat.sendSeen()
+    } else {
+      logger.warn({ chatId: chat?.id?.serialized || chat?.id }, 'Chat sendSeen method not available')
+    }
   } catch (error) {
-    logger.error(error, 'Failed to send seen status')
+    logger.error({ err: error, messageId: message.id?.serialized }, 'Failed to send seen status')
   }
 }
 

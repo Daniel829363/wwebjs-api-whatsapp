@@ -99,7 +99,7 @@ const setupSession = async (sessionId) => {
 
     const clientOptions = {
       puppeteer: {
-        executablePath: chromeBin,
+        ...(chromeBin && { executablePath: chromeBin }),
         headless,
         args: [
           '--autoplay-policy=user-gesture-required',
