@@ -1,0 +1,28 @@
+npm install -g pm2 pm2-windows-startup
+npx pm2-startup install
+
+
+npm config get prefix
+
+
+npx pm2 save //важно после изменении
+
+pm2 start server.js --name "my-bot"
+pm2 start server.js --name "my-bot" --cwd "C:\Data\Projects\bot\wwebjs-api"
+
+pm2 restart my-bot
+pm2 stop my-bot
+pm2 start my-bot
+pm2 delete my-bot
+
+
+npx pm2 list
+
+
+npx pm2 logs my-bot
+
+
+
+
+
+

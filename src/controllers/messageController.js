@@ -123,7 +123,40 @@ const downloadMedia = async (req, res) => {
     const message = await _getMessageById(client, messageId, chatId)
     if (!message) { throw new Error('Message not found') }
     if (!message.hasMedia) { throw new Error('Message media not found') }
-    const messageMedia = await message.downloadMedia()
+    
+    let messageMedia
+    try {
+      // Try standard download method
+      messageMedia = await message.downloadMedia()
+    } catch (downloadError) {
+      // If download fails, try alternative method using puppeteer page evaluation
+      if (downloadError.message && (downloadError.message.includes('addAnnotations') || downloadError.message.includes('Cannot read properties of undefined'))) {
+        try {
+          // Use puppeteer to download media directly bypassing the addAnnotations call
+          messageMedia = await client.pupPage.evaluate(async (msgId, msgChatId) => {
+            const msg = window.Store.Msg.get(msgId)
+            if (!msg) return null
+            
+            // Try to get the media directly without using the problematic method
+            const mediaObject = msg.mediaObject || msg.clientUrl
+            if (mediaObject) {
+              const mediaBlob = await msg.downloadMedia()
+              return mediaBlob
+            }
+            return null
+          }, message.id._serialized, chatId)
+          
+          if (!messageMedia) {
+            throw new Error('Failed to download media using alternative method')
+          }
+        } catch (altError) {
+          throw new Error('Failed to download media: ' + downloadError.message + ' (Alternative method also failed: ' + altError.message + ')')
+        }
+      } else {
+        throw downloadError
+      }
+    }
+    
     res.json({ success: true, messageMedia })
   } catch (error) {
     sendErrorResponse(res, 500, error.message)
@@ -151,7 +184,41 @@ const downloadMediaAsData = async (req, res) => {
     const message = await _getMessageById(client, messageId, chatId)
     if (!message) { throw new Error('Message not found') }
     if (!message.hasMedia) { throw new Error('Message media not found') }
-    const { data, mimetype, filename, filesize } = await message.downloadMedia()
+    
+    let messageMedia
+    try {
+      // Try standard download method
+      messageMedia = await message.downloadMedia()
+    } catch (downloadError) {
+      // If download fails, try alternative method using puppeteer page evaluation
+      if (downloadError.message && (downloadError.message.includes('addAnnotations') || downloadError.message.includes('Cannot read properties of undefined'))) {
+        try {
+          // Use puppeteer to download media directly bypassing the addAnnotations call
+          messageMedia = await client.pupPage.evaluate(async (msgId, msgChatId) => {
+            const msg = window.Store.Msg.get(msgId)
+            if (!msg) return null
+            
+            // Try to get the media directly without using the problematic method
+            const mediaObject = msg.mediaObject || msg.clientUrl
+            if (mediaObject) {
+              const mediaBlob = await msg.downloadMedia()
+              return mediaBlob
+            }
+            return null
+          }, message.id._serialized, chatId)
+          
+          if (!messageMedia) {
+            throw new Error('Failed to download media using alternative method')
+          }
+        } catch (altError) {
+          throw new Error('Failed to download media: ' + downloadError.message + ' (Alternative method also failed: ' + altError.message + ')')
+        }
+      } else {
+        throw downloadError
+      }
+    }
+    
+    const { data, mimetype, filename, filesize } = messageMedia
     /* #swagger.responses[200] = {
         description: 'Binary data.'
       }
