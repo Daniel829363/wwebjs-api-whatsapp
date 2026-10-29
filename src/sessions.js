@@ -2,8 +2,8 @@ const { Client, LocalAuth } = require('whatsapp-web.js')
 const fs = require('fs')
 const path = require('path')
 const sessions = new Map()
-const { baseWebhookURL, sessionFolderPath, maxAttachmentSize, setMessagesAsSeen, webVersion, webVersionCacheType, recoverSessions, chromeBin, headless, releaseBrowserLock } = require('./config')
-const { triggerWebhook, waitForNestedObject, isEventEnabled, sendMessageSeenStatus, sleep, patchWWebLibrary } = require('./utils')
+const { baseWebhookURL, sessionFolderPath, maxAttachmentSize, setMessagesAsSeen, webVersion, webVersionCacheType, recoverSessions, chromeBin, headless, releaseBrowserLock, lowResourceMode, clearBrowserCache, unauthSessionTimeoutMin, sessionRestartHour } = require('./config')
+const { triggerWebhook, waitForNestedObject, isEventEnabled, sendMessageSeenStatus, sleep, patchWWebLibrary, getMessageContactInfo } = require('./utils')
 const { logger } = require('./logger')
 const { initWebSocketServer, terminateWebSocketServer, triggerWebSocket } = require('./websocket')
 const qrcode = require('qrcode')
@@ -85,12 +85,36 @@ const restoreSessions = () => {
   }
 }
 
+// Per-session settings kept next to the browser profile, so they survive restarts
+const sessionSettingsPath = (sessionId) => path.resolve(sessionFolderPath, `session-${sessionId}`, 'wwebjs-api-settings.json')
+
+const readSessionSettings = async (sessionId) => {
+  try {
+    return JSON.parse(await fs.promises.readFile(sessionSettingsPath(sessionId), 'utf8'))
+  } catch (error) {
+    return {}
+  }
+}
+
+const writeSessionSettings = async (sessionId, settings) => {
+  const file = sessionSettingsPath(sessionId)
+  await fs.promises.mkdir(path.dirname(file), { recursive: true })
+  await fs.promises.writeFile(file, JSON.stringify(settings, null, 2))
+}
+
 // Setup Session
-const setupSession = async (sessionId) => {
+// options.unauthTimeoutMin - minutes to wait for the QR to be scanned before stopping the session (0 = never)
+const setupSession = async (sessionId, options = {}) => {
   try {
     if (sessions.has(sessionId)) {
       return { success: false, message: `Session already exists for: ${sessionId}`, client: sessions.get(sessionId) }
     }
+    const settings = await readSessionSettings(sessionId)
+    if (Number.isInteger(options.unauthTimeoutMin)) {
+      settings.unauthTimeoutMin = options.unauthTimeoutMin
+      await writeSessionSettings(sessionId, settings)
+    }
+    const sessionUnauthTimeoutMin = Number.isInteger(settings.unauthTimeoutMin) ? settings.unauthTimeoutMin : unauthSessionTimeoutMin
     logger.info({ sessionId }, 'Session is being initiated')
     // Disable the delete folder from the logout function (will be handled separately)
     const localAuth = new LocalAuth({ clientId: sessionId, dataPath: sessionFolderPath })
@@ -113,7 +137,19 @@ const setupSession = async (sessionId) => {
           '--disable-dev-shm-usage',
           '--disable-domain-reliability',
           '--disable-extensions',
-          '--disable-features=AudioServiceOutOfProcess',
+          // Chrome only honours the last --disable-features flag, so keep a single one
+          lowResourceMode
+            ? '--disable-features=AudioServiceOutOfProcess,site-per-process,IsolateOrigins,Translate,MediaRouter,OptimizationHints,BackForwardCache'
+            : '--disable-features=AudioServiceOutOfProcess',
+          ...(lowResourceMode
+            ? [
+                '--blink-settings=imagesEnabled=false',
+                '--disable-site-isolation-trials',
+                '--renderer-process-limit=2',
+                '--disk-cache-size=33554432',
+                '--media-cache-size=1'
+              ]
+            : []),
           '--disable-hang-monitor',
           '--disable-ipc-flooding-protection',
           '--disable-notifications',
@@ -139,7 +175,8 @@ const setupSession = async (sessionId) => {
           '--use-mock-keychain',
           '--disable-setuid-sandbox',
           '--no-sandbox',
-          '--disable-blink-features=AutomationControlled'
+          '--disable-blink-features=AutomationControlled',
+          '--disable-web-security'
         ]
       },
       authStrategy: localAuth
@@ -166,6 +203,10 @@ const setupSession = async (sessionId) => {
       }
     }
 
+    if (clearBrowserCache) {
+      await clearSessionBrowserCache(sessionId)
+    }
+
     const client = new Client(clientOptions)
     if (releaseBrowserLock) {
       // See https://github.com/puppeteer/puppeteer/issues/4860
@@ -186,11 +227,31 @@ const setupSession = async (sessionId) => {
       await client.initialize()
     } catch (error) {
       logger.error({ sessionId, err: error }, 'Initialize error')
+      // don't leave an orphan Chrome running when initialization fails
+      await client.destroy().catch(() => { })
       throw error
     }
 
     initWebSocketServer(sessionId)
     initializeEvents(client, sessionId)
+
+    // Stop sessions that are never linked, so idle QR browsers don't eat RAM
+    if (sessionUnauthTimeoutMin > 0) {
+      client.once('authenticated', () => { client.wasAuthenticated = true })
+      client.unauthTimeout = setTimeout(async () => {
+        if (client.wasAuthenticated || sessions.get(sessionId) !== client) return
+        const state = await client.getState().catch(() => null)
+        if (state === 'CONNECTED') return
+        logger.warn({ sessionId, minutes: sessionUnauthTimeoutMin }, 'Session not authenticated in time, stopping')
+        await destroySession(sessionId).catch(() => { })
+        // the session is only stopped: its folder is kept and it can be started again
+        if (isEventEnabled('disconnected')) {
+          const data = { reason: 'UNAUTH_TIMEOUT', timeoutMin: sessionUnauthTimeoutMin, message: `QR code was not scanned within ${sessionUnauthTimeoutMin} min, session stopped` }
+          triggerWebhook(process.env[sessionId.toUpperCase() + '_WEBHOOK_URL'] || baseWebhookURL, sessionId, 'disconnected', data)
+          try { triggerWebSocket(sessionId, 'disconnected', data) } catch (e) { }
+        }
+      }, sessionUnauthTimeoutMin * 60 * 1000)
+    }
 
     // Save the session to the Map
     sessions.set(sessionId, client)
@@ -311,8 +372,9 @@ const initializeEvents = (client, sessionId) => {
 
   client.on('message', async (message) => {
     if (isEventEnabled('message')) {
-      triggerWebhook(sessionWebhook, sessionId, 'message', { message })
-      triggerWebSocket(sessionId, 'message', { message })
+      const contact = await getMessageContactInfo(client, message)
+      triggerWebhook(sessionWebhook, sessionId, 'message', { message, contact })
+      triggerWebSocket(sessionId, 'message', { message, contact })
       if (message.hasMedia && message._data?.size < maxAttachmentSize) {
       // custom service event
         if (isEventEnabled('media')) {
@@ -340,9 +402,10 @@ const initializeEvents = (client, sessionId) => {
   }
 
   if (isEventEnabled('message_create')) {
-    client.on('message_create', (message) => {
-      triggerWebhook(sessionWebhook, sessionId, 'message_create', { message })
-      triggerWebSocket(sessionId, 'message_create', { message })
+    client.on('message_create', async (message) => {
+      const contact = await getMessageContactInfo(client, message)
+      triggerWebhook(sessionWebhook, sessionId, 'message_create', { message, contact })
+      triggerWebSocket(sessionId, 'message_create', { message, contact })
     })
   }
 
@@ -595,7 +658,58 @@ const flushSessions = async (deleteOnlyInactive) => {
   }
 }
 
+// Browser caches that are safe to drop: auth lives in IndexedDB / Local Storage, which are kept
+const BROWSER_CACHE_DIRS = [
+  ['Default', 'Cache'],
+  ['Default', 'Code Cache'],
+  ['Default', 'GPUCache'],
+  ['Default', 'DawnGraphiteCache'],
+  ['Default', 'DawnWebGPUCache'],
+  ['GPUPersistentCache'],
+  ['component_crx_cache'],
+  ['OptGuideOnDeviceModel'],
+  ['OptGuideOnDeviceClassifierModel']
+]
+
+const clearSessionBrowserCache = async (sessionId) => {
+  const sessionDir = path.resolve(sessionFolderPath, `session-${sessionId}`)
+  for (const parts of BROWSER_CACHE_DIRS) {
+    await fs.promises.rm(path.join(sessionDir, ...parts), { recursive: true, force: true })
+      .catch((err) => logger.debug({ sessionId, err }, 'Failed to clear browser cache dir'))
+  }
+}
+
+// Daily restart of running sessions: WhatsApp Web grows in memory over time,
+// a restart brings it back to the baseline (auth is kept)
+const restartAllSessions = async () => {
+  const ids = [...sessions.keys()]
+  logger.info({ count: ids.length }, 'Scheduled restart of sessions')
+  for (const sessionId of ids) {
+    try {
+      await reloadSession(sessionId)
+    } catch (error) {
+      logger.error({ sessionId, err: error }, 'Scheduled restart failed')
+    }
+    // restart one by one to avoid a CPU spike
+    await sleep(30000)
+  }
+}
+
+const scheduleDailyRestart = () => {
+  if (!Number.isInteger(sessionRestartHour) || sessionRestartHour < 0 || sessionRestartHour > 23) return
+  const now = new Date()
+  const next = new Date(now)
+  next.setHours(sessionRestartHour, 0, 0, 0)
+  if (next <= now) next.setDate(next.getDate() + 1)
+  logger.info({ at: next.toISOString() }, 'Next scheduled session restart')
+  setTimeout(async () => {
+    await restartAllSessions()
+    scheduleDailyRestart()
+  }, next - now)
+}
+
 module.exports = {
+  scheduleDailyRestart,
   sessions,
   setupSession,
   restoreSessions,

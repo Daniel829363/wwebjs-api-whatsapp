@@ -24,6 +24,11 @@ const enableWebSocket = process.env.ENABLE_WEBSOCKET ? (process.env.ENABLE_WEBSO
 const autoStartSessions = process.env.AUTO_START_SESSIONS ? (process.env.AUTO_START_SESSIONS).toLowerCase() === 'true' : true
 const basePath = process.env.BASE_PATH || ''
 const trustProxy = process.env.TRUST_PROXY ? (process.env.TRUST_PROXY).toLowerCase() === 'true' : false
+// resource optimizations
+const lowResourceMode = process.env.LOW_RESOURCE_MODE ? (process.env.LOW_RESOURCE_MODE).toLowerCase() === 'true' : true
+const clearBrowserCache = process.env.CLEAR_BROWSER_CACHE ? (process.env.CLEAR_BROWSER_CACHE).toLowerCase() === 'true' : true
+const unauthSessionTimeoutMin = process.env.UNAUTH_SESSION_TIMEOUT_MIN !== undefined ? parseInt(process.env.UNAUTH_SESSION_TIMEOUT_MIN) || 0 : 15
+const sessionRestartHour = process.env.SESSION_RESTART_HOUR !== undefined && process.env.SESSION_RESTART_HOUR !== '' ? parseInt(process.env.SESSION_RESTART_HOUR) : 4
 
 module.exports = {
   sessionFolderPath,
@@ -47,5 +52,9 @@ module.exports = {
   enableWebSocket,
   autoStartSessions,
   basePath,
-  trustProxy
+  trustProxy,
+  lowResourceMode,
+  clearBrowserCache,
+  unauthSessionTimeoutMin,
+  sessionRestartHour
 }

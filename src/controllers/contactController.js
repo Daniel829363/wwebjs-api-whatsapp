@@ -15,7 +15,62 @@ const { sendErrorResponse } = require('../utils')
  */
 const getClassInfo = async (req, res) => {
   /*
-    #swagger.summary = 'Get the contact'
+    #swagger.summary = 'Получить контакт по contactId'
+    #swagger.description = '<p>Возвращает объект Contact whatsapp-web.js: номер, имя из адресной книги (<code>name</code>), имя профиля WhatsApp (<code>pushname</code>), признаки бизнес-аккаунта, «мой контакт», блокировки и т.п.</p><p><b>Когда использовать:</b> чтобы узнать, как подписан собеседник, сохранён ли он в контактах, заблокирован ли он, является ли бизнес-аккаунтом. Тот же результат даёт /client/getContactById.</p><p><b>Ограничения и подводные камни:</b></p><ul><li>Передавайте id с суффиксом <code>@c.us</code>; голый номер или номер с + не подходит.</li><li>WhatsApp Web создаёт объект контакта даже для номера, с которым никогда не было переписки, поэтому успешный ответ не означает, что номер зарегистрирован в WhatsApp — для проверки используйте /client/isRegisteredUser или /client/getNumberId.</li><li><code>name</code>/<code>shortName</code> заполнены только для сохранённых в телефоне контактов; иначе ориентируйтесь на <code>pushname</code>. Для бизнес-аккаунтов может присутствовать <code>businessProfile</code>.</li></ul><p><b>Ответ:</b> <code>{success: true, contact: {...}}</code>.</p>'
+    #swagger.requestBody = {
+      required: true,
+      '@content': {
+        'application/json': {
+          schema: {
+            type: 'object',
+            required: ['contactId'],
+            properties: {
+              contactId: {
+                type: 'string',
+                description: 'id контакта в формате <код страны><номер>@c.us (только цифры, без +, пробелов и скобок). Можно получить из /client/getContacts, /client/getNumberId или из поля from входящего сообщения.',
+                example: '79991234567@c.us'
+              }
+            }
+          },
+          examples: {
+            contact: { summary: 'Контакт', value: { contactId: '79991234567@c.us' } }
+          }
+        }
+      }
+    }
+    #swagger.responses[200] = {
+      description: 'Объект Contact (сокращено).',
+      content: { 'application/json': { example: {
+            success: true,
+            contact: {
+              id: { server: 'c.us', user: '79991234567', _serialized: '79991234567@c.us' },
+              number: '79991234567',
+              isBusiness: false,
+              isEnterprise: false,
+              name: 'Иван Петров',
+              pushname: 'Ivan',
+              shortName: 'Иван',
+              type: 'in',
+              isMe: false,
+              isUser: true,
+              isGroup: false,
+              isWAContact: true,
+              isMyContact: true,
+              isBlocked: false
+            }
+          } } }
+    }
+    #swagger.responses[500] = {
+      description: 'Server failure. Контакт не получен (error: Contact not found), либо исключение whatsapp-web.js / Puppeteer — например, при синтаксически неверном contactId. В error — текст исключения.',
+      content: {
+        'application/json': {
+          examples: {
+            contact_not_found: { summary: 'Контакт не найден', value: { success: false, error: 'Contact not found' } },
+            other: { summary: 'Другое исключение', value: { success: false, error: 'Protocol error (Runtime.callFunctionOn): Target closed.' } }
+          }
+        }
+      }
+    }
   */
   try {
     const { contactId } = req.body
@@ -44,7 +99,47 @@ const getClassInfo = async (req, res) => {
  */
 const block = async (req, res) => {
   /*
-    #swagger.summary = 'Block contact'
+    #swagger.summary = 'Заблокировать контакт'
+    #swagger.description = '<p>Блокирует контакт на подключённом аккаунте: он больше не сможет писать и звонить вам.</p><p><b>Когда использовать:</b> для защиты от спама или по запросу оператора. Снять блокировку — /contact/unblock; список заблокированных — /client/getBlockedContacts.</p><p><b>Ограничения и подводные камни:</b></p><ul><li>Действие сразу применяется к реальному аккаунту WhatsApp (видно и на телефоне).</li><li>Группы заблокировать нельзя: для id вида ...@g.us метод ничего не делает и возвращает <code>result: false</code>.</li><li>Пока контакт заблокирован, писать ему через API не получится — сначала выполните /contact/unblock.</li></ul><p><b>Ответ:</b> <code>result: true</code> — заблокирован, <code>false</code> — передан id группы.</p>'
+    #swagger.requestBody = {
+      required: true,
+      '@content': {
+        'application/json': {
+          schema: {
+            type: 'object',
+            required: ['contactId'],
+            properties: {
+              contactId: {
+                type: 'string',
+                description: 'id контакта в формате <код страны><номер>@c.us (только цифры, без +, пробелов и скобок). Можно получить из /client/getContacts, /client/getNumberId или из поля from входящего сообщения.',
+                example: '79991234567@c.us'
+              }
+            }
+          },
+          examples: {
+            contact: { summary: 'Контакт', value: { contactId: '79991234567@c.us' } }
+          }
+        }
+      }
+    }
+    #swagger.responses[200] = {
+      description: 'result: true — контакт заблокирован; false — id относится к группе, блокировка не выполнена.',
+      content: { 'application/json': { examples: {
+            blocked: { summary: 'Заблокирован', value: { success: true, result: true } },
+            group: { summary: 'Передан id группы', value: { success: true, result: false } }
+          } } }
+    }
+    #swagger.responses[500] = {
+      description: 'Server failure. Контакт не получен (error: Contact not found), либо исключение whatsapp-web.js / Puppeteer — например, при синтаксически неверном contactId. В error — текст исключения.',
+      content: {
+        'application/json': {
+          examples: {
+            contact_not_found: { summary: 'Контакт не найден', value: { success: false, error: 'Contact not found' } },
+            other: { summary: 'Другое исключение', value: { success: false, error: 'Protocol error (Runtime.callFunctionOn): Target closed.' } }
+          }
+        }
+      }
+    }
   */
   try {
     const { contactId } = req.body
@@ -74,8 +169,47 @@ const block = async (req, res) => {
  */
 const getAbout = async (req, res) => {
   /*
-    #swagger.summary = "Get the contact's current info"
-    #swagger.description = "Get the Contact's current 'about' info. Returns null if you don't have permission to read their status."
+    #swagger.summary = 'Получить текст «О себе» (about) контакта'
+    #swagger.description = '<p>Возвращает текст статуса «О себе» (about / «Сведения») контакта.</p><p><b>Когда использовать:</b> для обогащения карточки клиента. Это не «истории» (Status-публикации) — их метод не возвращает.</p><p><b>Ограничения и подводные камни:</b></p><ul><li>Если настройки приватности контакта не позволяют вам видеть «Сведения» или текст недоступен, возвращается <code>result: null</code>.</li></ul><p><b>Ответ:</b> <code>result</code> — строка или null.</p>'
+    #swagger.requestBody = {
+      required: true,
+      '@content': {
+        'application/json': {
+          schema: {
+            type: 'object',
+            required: ['contactId'],
+            properties: {
+              contactId: {
+                type: 'string',
+                description: 'id контакта в формате <код страны><номер>@c.us (только цифры, без +, пробелов и скобок). Можно получить из /client/getContacts, /client/getNumberId или из поля from входящего сообщения.',
+                example: '79991234567@c.us'
+              }
+            }
+          },
+          examples: {
+            contact: { summary: 'Контакт', value: { contactId: '79991234567@c.us' } }
+          }
+        }
+      }
+    }
+    #swagger.responses[200] = {
+      description: 'result — текст «О себе» или null, если он скрыт настройками приватности или недоступен.',
+      content: { 'application/json': { examples: {
+            about: { summary: 'Текст доступен', value: { success: true, result: 'На работе, отвечу позже' } },
+            hidden: { summary: 'Скрыт приватностью', value: { success: true, result: null } }
+          } } }
+    }
+    #swagger.responses[500] = {
+      description: 'Server failure. Контакт не получен (error: Contact not found), либо исключение whatsapp-web.js / Puppeteer — например, при синтаксически неверном contactId. В error — текст исключения.',
+      content: {
+        'application/json': {
+          examples: {
+            contact_not_found: { summary: 'Контакт не найден', value: { success: false, error: 'Contact not found' } },
+            other: { summary: 'Другое исключение', value: { success: false, error: 'Protocol error (Runtime.callFunctionOn): Target closed.' } }
+          }
+        }
+      }
+    }
   */
   try {
     const { contactId } = req.body
@@ -105,8 +239,47 @@ const getAbout = async (req, res) => {
  */
 const getChat = async (req, res) => {
   /*
-    #swagger.summary = 'Get the chat'
-    #swagger.description = 'Get the chat that corresponds to the contact. Will return null when getting chat for currently logged in user.'
+    #swagger.summary = 'Получить чат с контактом'
+    #swagger.description = '<p>Возвращает объект Chat, соответствующий личной переписке с контактом.</p><p><b>Когда использовать:</b> когда есть contactId, а нужны данные чата (непрочитанные, архив, последнее сообщение). Для личных чатов chatId совпадает с contactId, поэтому можно сразу вызвать /chat/getClassInfo.</p><p><b>Ограничения и подводные камни:</b></p><ul><li>Для собственного номера (контакт с <code>isMe: true</code>) возвращается <code>result: null</code>.</li><li>Если переписки ещё не было, WhatsApp Web может вернуть новый пустой чат.</li></ul><p><b>Ответ:</b> <code>result</code> — объект Chat или null.</p>'
+    #swagger.requestBody = {
+      required: true,
+      '@content': {
+        'application/json': {
+          schema: {
+            type: 'object',
+            required: ['contactId'],
+            properties: {
+              contactId: {
+                type: 'string',
+                description: 'id контакта в формате <код страны><номер>@c.us (только цифры, без +, пробелов и скобок). Можно получить из /client/getContacts, /client/getNumberId или из поля from входящего сообщения.',
+                example: '79991234567@c.us'
+              }
+            }
+          },
+          examples: {
+            contact: { summary: 'Контакт', value: { contactId: '79991234567@c.us' } }
+          }
+        }
+      }
+    }
+    #swagger.responses[200] = {
+      description: 'result — объект Chat (сокращено) или null для собственного номера.',
+      content: { 'application/json': { examples: {
+            chat: { summary: 'Чат найден', value: { success: true, result: { id: { server: 'c.us', user: '79991234567', _serialized: '79991234567@c.us' }, name: 'Иван Петров', isGroup: false, isReadOnly: false, unreadCount: 0, timestamp: 1730000000, archived: false, pinned: false, isMuted: false, muteExpiration: 0 } } },
+            me: { summary: 'Собственный номер', value: { success: true, result: null } }
+          } } }
+    }
+    #swagger.responses[500] = {
+      description: 'Server failure. Контакт не получен (error: Contact not found), либо исключение whatsapp-web.js / Puppeteer — например, при синтаксически неверном contactId. В error — текст исключения.',
+      content: {
+        'application/json': {
+          examples: {
+            contact_not_found: { summary: 'Контакт не найден', value: { success: false, error: 'Contact not found' } },
+            other: { summary: 'Другое исключение', value: { success: false, error: 'Protocol error (Runtime.callFunctionOn): Target closed.' } }
+          }
+        }
+      }
+    }
   */
   try {
     const { contactId } = req.body
@@ -136,8 +309,44 @@ const getChat = async (req, res) => {
  */
 const getFormattedNumber = async (req, res) => {
   /*
-    #swagger.summary = 'Get the formatted phone number'
-    #swagger.description = "Returns the contact's formatted phone number, (12345678901@c.us) => (+1 (234) 5678-901)."
+    #swagger.summary = 'Получить номер контакта в отформатированном виде'
+    #swagger.description = '<p>Возвращает номер телефона контакта в читаемом международном формате, как его показывает WhatsApp (с +, пробелами и дефисами по правилам страны).</p><p><b>Когда использовать:</b> для показа номера человеку (в CRM, отчётах). Для отправки сообщений используйте id вида ...@c.us, а не отформатированную строку.</p><p><b>Ограничения и подводные камни:</b></p><ul><li>Формат зависит от страны номера и правил WhatsApp Web — разбирать эту строку программно не рекомендуется.</li><li>Аналог без поиска контакта — /client/getFormattedNumber.</li></ul><p><b>Ответ:</b> <code>result</code> — строка.</p>'
+    #swagger.requestBody = {
+      required: true,
+      '@content': {
+        'application/json': {
+          schema: {
+            type: 'object',
+            required: ['contactId'],
+            properties: {
+              contactId: {
+                type: 'string',
+                description: 'id контакта в формате <код страны><номер>@c.us (только цифры, без +, пробелов и скобок). Можно получить из /client/getContacts, /client/getNumberId или из поля from входящего сообщения.',
+                example: '79991234567@c.us'
+              }
+            }
+          },
+          examples: {
+            contact: { summary: 'Контакт', value: { contactId: '79991234567@c.us' } }
+          }
+        }
+      }
+    }
+    #swagger.responses[200] = {
+      description: 'result — номер в читаемом международном формате.',
+      content: { 'application/json': { example: { success: true, result: '+7 999 123-45-67' } } }
+    }
+    #swagger.responses[500] = {
+      description: 'Server failure. Контакт не получен (error: Contact not found), либо исключение whatsapp-web.js / Puppeteer — например, при синтаксически неверном contactId. В error — текст исключения.',
+      content: {
+        'application/json': {
+          examples: {
+            contact_not_found: { summary: 'Контакт не найден', value: { success: false, error: 'Contact not found' } },
+            other: { summary: 'Другое исключение', value: { success: false, error: 'Protocol error (Runtime.callFunctionOn): Target closed.' } }
+          }
+        }
+      }
+    }
   */
   try {
     const { contactId } = req.body
@@ -167,8 +376,44 @@ const getFormattedNumber = async (req, res) => {
  */
 const getCountryCode = async (req, res) => {
   /*
-    #swagger.summary = 'Get the country code'
-    #swagger.description = "Returns the contact's country code, (1541859685@c.us) => (1)."
+    #swagger.summary = 'Получить телефонный код страны контакта'
+    #swagger.description = '<p>Возвращает телефонный код страны номера контакта (без +), например <code>7</code> для <code>79991234567@c.us</code>, <code>1</code> для США.</p><p><b>Когда использовать:</b> для маршрутизации клиентов по странам, выбора языка ответа и т.п.</p><p><b>Ограничения и подводные камни:</b></p><ul><li>Возвращается строка с цифрами кода, а не ISO-код страны («7», а не «RU»). Один код может соответствовать нескольким странам (7 — Россия и Казахстан).</li><li>Аналог без поиска контакта — /client/getCountryCode.</li></ul><p><b>Ответ:</b> <code>result</code> — строка с кодом.</p>'
+    #swagger.requestBody = {
+      required: true,
+      '@content': {
+        'application/json': {
+          schema: {
+            type: 'object',
+            required: ['contactId'],
+            properties: {
+              contactId: {
+                type: 'string',
+                description: 'id контакта в формате <код страны><номер>@c.us (только цифры, без +, пробелов и скобок). Можно получить из /client/getContacts, /client/getNumberId или из поля from входящего сообщения.',
+                example: '79991234567@c.us'
+              }
+            }
+          },
+          examples: {
+            contact: { summary: 'Контакт', value: { contactId: '79991234567@c.us' } }
+          }
+        }
+      }
+    }
+    #swagger.responses[200] = {
+      description: 'result — телефонный код страны без +.',
+      content: { 'application/json': { example: { success: true, result: '7' } } }
+    }
+    #swagger.responses[500] = {
+      description: 'Server failure. Контакт не получен (error: Contact not found), либо исключение whatsapp-web.js / Puppeteer — например, при синтаксически неверном contactId. В error — текст исключения.',
+      content: {
+        'application/json': {
+          examples: {
+            contact_not_found: { summary: 'Контакт не найден', value: { success: false, error: 'Contact not found' } },
+            other: { summary: 'Другое исключение', value: { success: false, error: 'Protocol error (Runtime.callFunctionOn): Target closed.' } }
+          }
+        }
+      }
+    }
   */
   try {
     const { contactId } = req.body
@@ -198,8 +443,47 @@ const getCountryCode = async (req, res) => {
  */
 const getProfilePicUrl = async (req, res) => {
   /*
-    #swagger.summary = 'Get the profile picture URL'
-    #swagger.description = "Get the contact's profile picture URL, if privacy settings allow it."
+    #swagger.summary = 'Получить ссылку на аватар контакта'
+    #swagger.description = '<p>Возвращает URL фотографии профиля контакта на серверах WhatsApp.</p><p><b>Когда использовать:</b> для показа аватара клиента в CRM или чат-интерфейсе.</p><p><b>Ограничения и подводные камни:</b></p><ul><li>Если фото не установлено или скрыто настройками приватности, возвращается <code>result: null</code>.</li><li>Ссылка временная (подписанный URL CDN WhatsApp) и со временем перестаёт открываться. Если аватар нужен надолго — скачайте файл сразу и храните у себя, а не ссылку.</li></ul><p><b>Ответ:</b> <code>result</code> — строка URL или null.</p>'
+    #swagger.requestBody = {
+      required: true,
+      '@content': {
+        'application/json': {
+          schema: {
+            type: 'object',
+            required: ['contactId'],
+            properties: {
+              contactId: {
+                type: 'string',
+                description: 'id контакта в формате <код страны><номер>@c.us (только цифры, без +, пробелов и скобок). Можно получить из /client/getContacts, /client/getNumberId или из поля from входящего сообщения.',
+                example: '79991234567@c.us'
+              }
+            }
+          },
+          examples: {
+            contact: { summary: 'Контакт', value: { contactId: '79991234567@c.us' } }
+          }
+        }
+      }
+    }
+    #swagger.responses[200] = {
+      description: 'result — URL аватара или null, если фото нет или оно скрыто.',
+      content: { 'application/json': { examples: {
+            url: { summary: 'Аватар доступен', value: { success: true, result: 'https://pps.whatsapp.net/v/t61.24694-24/123456789_n.jpg?ccb=11-4&oh=01_AdQ&oe=6740A1B2&_nc_cat=1' } },
+            hidden: { summary: 'Нет фото или скрыто', value: { success: true, result: null } }
+          } } }
+    }
+    #swagger.responses[500] = {
+      description: 'Server failure. Контакт не получен (error: Contact not found), либо исключение whatsapp-web.js / Puppeteer — например, при синтаксически неверном contactId. В error — текст исключения.',
+      content: {
+        'application/json': {
+          examples: {
+            contact_not_found: { summary: 'Контакт не найден', value: { success: false, error: 'Contact not found' } },
+            other: { summary: 'Другое исключение', value: { success: false, error: 'Protocol error (Runtime.callFunctionOn): Target closed.' } }
+          }
+        }
+      }
+    }
   */
   try {
     const { contactId } = req.body
@@ -229,8 +513,47 @@ const getProfilePicUrl = async (req, res) => {
  */
 const unblock = async (req, res) => {
   /*
-    #swagger.summary = 'Unblock the contact'
-    #swagger.description = "Unblock the contact from WhatsApp."
+    #swagger.summary = 'Разблокировать контакт'
+    #swagger.description = '<p>Снимает блокировку с контакта, ранее заблокированного через /contact/block или вручную на телефоне.</p><p><b>Когда использовать:</b> чтобы снова получать сообщения от контакта и иметь возможность ему писать.</p><p><b>Ограничения и подводные камни:</b></p><ul><li>Для id группы (...@g.us) ничего не делает и возвращает <code>result: false</code>.</li><li>Сообщения, отправленные контактом во время блокировки, не будут доставлены и после разблокировки.</li></ul><p><b>Ответ:</b> <code>result: true</code> — разблокирован, <code>false</code> — передан id группы.</p>'
+    #swagger.requestBody = {
+      required: true,
+      '@content': {
+        'application/json': {
+          schema: {
+            type: 'object',
+            required: ['contactId'],
+            properties: {
+              contactId: {
+                type: 'string',
+                description: 'id контакта в формате <код страны><номер>@c.us (только цифры, без +, пробелов и скобок). Можно получить из /client/getContacts, /client/getNumberId или из поля from входящего сообщения.',
+                example: '79991234567@c.us'
+              }
+            }
+          },
+          examples: {
+            contact: { summary: 'Контакт', value: { contactId: '79991234567@c.us' } }
+          }
+        }
+      }
+    }
+    #swagger.responses[200] = {
+      description: 'result: true — контакт разблокирован; false — id относится к группе.',
+      content: { 'application/json': { examples: {
+            unblocked: { summary: 'Разблокирован', value: { success: true, result: true } },
+            group: { summary: 'Передан id группы', value: { success: true, result: false } }
+          } } }
+    }
+    #swagger.responses[500] = {
+      description: 'Server failure. Контакт не получен (error: Contact not found), либо исключение whatsapp-web.js / Puppeteer — например, при синтаксически неверном contactId. В error — текст исключения.',
+      content: {
+        'application/json': {
+          examples: {
+            contact_not_found: { summary: 'Контакт не найден', value: { success: false, error: 'Contact not found' } },
+            other: { summary: 'Другое исключение', value: { success: false, error: 'Protocol error (Runtime.callFunctionOn): Target closed.' } }
+          }
+        }
+      }
+    }
   */
   try {
     const { contactId } = req.body
@@ -260,8 +583,49 @@ const unblock = async (req, res) => {
  */
 const getCommonGroups = async (req, res) => {
   /*
-    #swagger.summary = "Get the contact's common groups"
-    #swagger.description = "Get the contact's common groups with you. Returns empty array if you don't have any common group."
+    #swagger.summary = 'Получить общие группы с контактом'
+    #swagger.description = '<p>Возвращает список групп, в которых состоите и вы, и указанный контакт.</p><p><b>Когда использовать:</b> чтобы понять, из какой группы/сообщества пришёл клиент, или проверить участие контакта в ваших группах.</p><p><b>Ограничения и подводные камни:</b></p><ul><li>Возвращаются только id групп (объекты ChatId), без названий — название получите через /chat/getClassInfo по <code>_serialized</code>.</li><li>Если общих групп нет, возвращается пустой массив.</li></ul><p><b>Ответ:</b> <code>result</code> — массив объектов <code>{server, user, _serialized}</code>.</p>'
+    #swagger.requestBody = {
+      required: true,
+      '@content': {
+        'application/json': {
+          schema: {
+            type: 'object',
+            required: ['contactId'],
+            properties: {
+              contactId: {
+                type: 'string',
+                description: 'id контакта в формате <код страны><номер>@c.us (только цифры, без +, пробелов и скобок). Можно получить из /client/getContacts, /client/getNumberId или из поля from входящего сообщения.',
+                example: '79991234567@c.us'
+              }
+            }
+          },
+          examples: {
+            contact: { summary: 'Контакт', value: { contactId: '79991234567@c.us' } }
+          }
+        }
+      }
+    }
+    #swagger.responses[200] = {
+      description: 'result — массив id общих групп (может быть пустым).',
+      content: { 'application/json': { example: {
+            success: true,
+            result: [
+              { server: 'g.us', user: '120363012345678901', _serialized: '120363012345678901@g.us' }
+            ]
+          } } }
+    }
+    #swagger.responses[500] = {
+      description: 'Server failure. Контакт не получен (error: Contact not found), либо исключение whatsapp-web.js / Puppeteer — например, при синтаксически неверном contactId. В error — текст исключения.',
+      content: {
+        'application/json': {
+          examples: {
+            contact_not_found: { summary: 'Контакт не найден', value: { success: false, error: 'Contact not found' } },
+            other: { summary: 'Другое исключение', value: { success: false, error: 'Protocol error (Runtime.callFunctionOn): Target closed.' } }
+          }
+        }
+      }
+    }
   */
   try {
     const { contactId } = req.body

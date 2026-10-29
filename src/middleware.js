@@ -10,7 +10,7 @@ const apikey = async (req, res, next) => {
     }]
   */
   /* #swagger.responses[403] = {
-        description: "Forbidden.",
+        description: "Forbidden. На сервере задан API_KEY, а заголовок x-api-key отсутствует или не совпадает с ним. Тело: {success: false, error: 'Invalid API key'}. Если API_KEY не задан, этот ответ не возникает.",
         content: {
           "application/json": {
             schema: { "$ref": "#/definitions/ForbiddenResponse" }
@@ -31,18 +31,18 @@ const sessionNameValidation = async (req, res, next) => {
   /*
     #swagger.parameters['sessionId'] = {
       in: 'path',
-      description: 'Unique identifier for the session (alphanumeric and - allowed)',
+      description: 'Идентификатор сессии, который вы сами выбрали при /session/start. Допустимы только латинские буквы, цифры, _ и - (regex ^[A-Za-z0-9_-]+$), регистр важен. Пробелы, точки, кириллица, @ и / недопустимы (ответ 422). Пример: my-session, shop_2, f8377d8d-a589-4242-9ba6-9486a04ef80c.',
       required: true,
       type: 'string',
-      example: 'f8377d8d-a589-4242-9ba6-9486a04ef80c'
+      example: 'my-session'
     }
   */
   if ((!/^[\w-]+$/.test(req.params.sessionId))) {
     /* #swagger.responses[422] = {
-        description: "Unprocessable Entity.",
+        description: "Unprocessable Entity. sessionId в пути содержит недопустимые символы (разрешены только латиница, цифры, _ и -). Тело: {success: false, error: 'Session should be alphanumerical or -'}.",
         content: {
           "application/json": {
-            schema: { "$ref": "#/definitions/ErrorResponse" }
+            schema: { "$ref": "#/definitions/UnprocessableEntityResponse" }
           }
         }
       }
@@ -56,7 +56,7 @@ const sessionValidation = async (req, res, next) => {
   const validation = await validateSession(req.params.sessionId)
   if (validation.success !== true) {
     /* #swagger.responses[404] = {
-        description: "Not Found.",
+        description: "Not Found. Сессия не готова к работе. Значения error: session_not_found (сессия с таким id не запущена — вызовите /session/start), session_not_connected (браузер запущен, но WhatsApp не авторизован или не в состоянии CONNECTED — отсканируйте QR / дождитесь события ready), browser tab closed (вкладка Chromium закрыта — /session/restart), session closed (страница не отвечает), либо текст другого исключения.",
         content: {
           "application/json": {
             schema: { "$ref": "#/definitions/NotFoundResponse" }
@@ -83,7 +83,7 @@ const sessionSwagger = async (req, res, next) => {
   /*
     #swagger.tags = ['Session']
     #swagger.responses[500] = {
-      description: "Server failure.",
+      description: "Server failure. Исключение внутри whatsapp-web.js / Puppeteer (неверный или несуществующий id, объект не найден, вкладка браузера закрыта и т.п.). В поле error — текст исключения.",
       content: {
         "application/json": {
           schema: { "$ref": "#/definitions/ErrorResponse" }
@@ -98,7 +98,7 @@ const clientSwagger = async (req, res, next) => {
   /*
     #swagger.tags = ['Client']
     #swagger.responses[500] = {
-      description: "Server failure.",
+      description: "Server failure. Исключение внутри whatsapp-web.js / Puppeteer (неверный или несуществующий id, объект не найден, вкладка браузера закрыта и т.п.). В поле error — текст исключения.",
       content: {
         "application/json": {
           schema: { "$ref": "#/definitions/ErrorResponse" }
@@ -119,14 +119,14 @@ const contactSwagger = async (req, res, next) => {
         properties: {
           contactId: {
             type: 'string',
-            description: 'Unique WhatsApp ID for the contact',
-            example: '6281288888888@c.us'
+            description: 'id контакта WhatsApp в формате <код страны><номер>@c.us',
+            example: '79991234567@c.us'
           }
         }
       }
     }
     #swagger.responses[500] = {
-      description: "Server failure.",
+      description: "Server failure. Исключение внутри whatsapp-web.js / Puppeteer (неверный или несуществующий id, объект не найден, вкладка браузера закрыта и т.п.). В поле error — текст исключения.",
       content: {
         "application/json": {
           schema: { "$ref": "#/definitions/ErrorResponse" }
@@ -147,13 +147,13 @@ const messageSwagger = async (req, res, next) => {
         properties: {
           chatId: {
             type: 'string',
-            description: 'The chat id which contains the message',
-            example: '6281288888888@c.us'
+            description: 'id чата, в котором находится сообщение (...@c.us или ...@g.us)',
+            example: '79991234567@c.us'
           },
           messageId: {
             type: 'string',
-            description: 'Unique WhatsApp ID for the message',
-            example: 'ABCDEF999999999'
+            description: 'Короткий id сообщения (поле message.id.id, не _serialized)',
+            example: '3EB0C767D82E4B5A1F2C'
           }
         }
       }
@@ -172,14 +172,14 @@ const chatSwagger = async (req, res, next) => {
         properties: {
           chatId: {
             type: 'string',
-            description: 'Unique WhatsApp ID for the given chat (either group or personal)',
-            example: '6281288888888@c.us'
+            description: 'id чата: личный ...@c.us или группа ...@g.us',
+            example: '79991234567@c.us'
           }
         }
       }
     }
     #swagger.responses[500] = {
-      description: "Server failure.",
+      description: "Server failure. Исключение внутри whatsapp-web.js / Puppeteer (неверный или несуществующий id, объект не найден, вкладка браузера закрыта и т.п.). В поле error — текст исключения.",
       content: {
         "application/json": {
           schema: { "$ref": "#/definitions/ErrorResponse" }
@@ -200,14 +200,14 @@ const groupChatSwagger = async (req, res, next) => {
         properties: {
           chatId: {
             type: 'string',
-            description: 'Unique WhatsApp id for the given chat group',
-            example: 'XXXXXXXXXX@g.us'
+            description: 'id группы в формате ...@g.us',
+            example: '120363012345678901@g.us'
           }
         }
       }
     }
     #swagger.responses[500] = {
-      description: "Server failure.",
+      description: "Server failure. Исключение внутри whatsapp-web.js / Puppeteer (неверный или несуществующий id, объект не найден, вкладка браузера закрыта и т.п.). В поле error — текст исключения.",
       content: {
         "application/json": {
           schema: { "$ref": "#/definitions/ErrorResponse" }
@@ -222,7 +222,7 @@ const channelSwagger = async (req, res, next) => {
   /*
     #swagger.tags = ['Channel Chat']
     #swagger.responses[500] = {
-      description: "Server failure.",
+      description: "Server failure. Исключение внутри whatsapp-web.js / Puppeteer (неверный или несуществующий id, объект не найден, вкладка браузера закрыта и т.п.). В поле error — текст исключения.",
       content: {
         "application/json": {
           schema: { "$ref": "#/definitions/ErrorResponse" }

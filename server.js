@@ -2,7 +2,7 @@ const app = require('./src/app')
 const { baseWebhookURL, enableWebHook, enableWebSocket, autoStartSessions } = require('./src/config')
 const { logger } = require('./src/logger')
 const { handleUpgrade } = require('./src/websocket')
-const { restoreSessions } = require('./src/sessions')
+const { restoreSessions, scheduleDailyRestart } = require('./src/sessions')
 
 require('dotenv').config()
 
@@ -22,6 +22,7 @@ const server = app.listen(port, () => {
     logger.info('Starting all sessions')
     restoreSessions()
   }
+  scheduleDailyRestart()
 })
 
 if (enableWebSocket) {

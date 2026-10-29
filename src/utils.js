@@ -111,7 +111,10 @@ const patchWWebLibrary = async (client) => {
 
       if (searchOptions && searchOptions.limit > 0) {
         while (msgs.length < searchOptions.limit) {
-          const loadedMessages = await window.Store.ConversationMsgs.loadEarlierMsgs(chat)
+          // newer whatsapp-web.js no longer exposes window.Store
+          const loadedMessages = window.Store?.ConversationMsgs
+            ? await window.Store.ConversationMsgs.loadEarlierMsgs(chat)
+            : await window.require('WAWebChatLoadMessages').loadEarlierMsgs({ chat })
           if (!loadedMessages || !loadedMessages.length) break
           msgs = [...loadedMessages.filter(msgFilter), ...msgs]
         }
@@ -141,7 +144,7 @@ const patchWWebLibrary = async (client) => {
         return true
       }
 
-      const allChats = window.Store.Chat.getModelsArray()
+      const allChats = (window.Store?.Chat || window.require('WAWebCollections').Chat).getModelsArray()
 
       const filteredChats = allChats.filter(chatFilter)
 
@@ -151,6 +154,8 @@ const patchWWebLibrary = async (client) => {
     }
 
     // hotfix for https://github.com/pedroslopez/whatsapp-web.js/pull/3703
+    // newer whatsapp-web.js has no window.Store and already ships this fix
+    if (!window.Store) return
     window.Store.FindOrCreateChat = window.require('WAWebFindChatAction')
     window.WWebJS.getChat = async (chatId, { getAsModel = true } = {}) => {
       const isChannel = /@\w*newsletter\b/.test(chatId)
@@ -178,7 +183,44 @@ const patchWWebLibrary = async (client) => {
   })
 }
 
+/**
+ * Resolve the phone number of the other party of a message using only
+ * WhatsApp Web's local data (no queries to WhatsApp servers), so that
+ * webhook consumers don't need extra API lookups for @lid senders.
+ * Returns null when nothing could be resolved.
+ */
+const getMessageContactInfo = async (client, message) => {
+  try {
+    const id = message.fromMe ? message.to : (message.author || message.from)
+    if (!id || typeof id !== 'string' || id === 'status@broadcast' || id.endsWith('@g.us') || id.endsWith('@newsletter')) return null
+
+    const info = await client.pupPage.evaluate((id) => {
+      const wid = window.require('WAWebWidFactory').createWid(id)
+      const ApiContact = window.require('WAWebApiContact')
+      const serialize = (w) => w ? (w._serialized || w.$1 || null) : null
+      const isLid = wid.server === 'lid'
+      const lid = isLid ? wid : ApiContact.getCurrentLid(wid)
+      const pn = isLid ? ApiContact.getPhoneNumber(wid) : wid
+      const phoneId = serialize(pn)
+      const number = phoneId ? phoneId.split('@')[0] : null
+      let formattedNumber = null
+      let countryCode = null
+      if (number) {
+        try { formattedNumber = window.require('WAWebPhoneUtils').formattedPhoneNumber(number + '@s.whatsapp.net') } catch (e) {}
+        try { countryCode = window.require('WAPhoneFindCC').findCC(number) } catch (e) {}
+      }
+      return { lid: serialize(lid), phoneId, number, formattedNumber, countryCode }
+    }, id)
+
+    return { id, ...info, pushname: message._data?.notifyName || null }
+  } catch (error) {
+    logger.debug({ err: error }, 'Failed to resolve message contact info')
+    return null
+  }
+}
+
 module.exports = {
+  getMessageContactInfo,
   triggerWebhook,
   sendErrorResponse,
   waitForNestedObject,
