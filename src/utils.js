@@ -212,7 +212,8 @@ const getMessageContactInfo = async (client, message) => {
       return { lid: serialize(lid), phoneId, number, formattedNumber, countryCode }
     }, id)
 
-    return { id, ...info, pushname: message._data?.notifyName || null }
+    // for own messages notifyName is our own name, not the other party's
+    return { id, ...info, pushname: message.fromMe ? null : (message._data?.notifyName || null) }
   } catch (error) {
     logger.debug({ err: error }, 'Failed to resolve message contact info')
     return null
